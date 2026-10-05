@@ -162,7 +162,7 @@ Qualcomm's apk, libraries, firmware and sound models; the UDK language model; Am
 
 ## Built with Claude Code
 
-I built this with Claude Code: it did the reverse engineering, the guarded DSP trials and the code, while I said the word into the phone and decided what the phone should do. The trial log in `docs/` is condensed from that work.
+I built this with Claude Code. I set the goal, ran every live test with my own voice and phone, and decided how the phone should behave; Claude Code did most of the reverse engineering, ran the guarded DSP trials and wrote the code. The trial log in `docs/` is condensed from that work.
 
 ## License
 
