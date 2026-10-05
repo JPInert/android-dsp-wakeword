@@ -1,0 +1,19 @@
+# Build output
+phone/out/
+phone/native/udkgen
+phone/native/magread
+__pycache__/
+# Never commit vendor files: Qualcomm libraries/apks, sound models, language models, recordings, tokens
+*.so
+*.apk
+*.uim
+*.lm
+*.model
+*.raw
+*.m4a
+*.wav
+vendor/
+phone/earcons/
+*.token
+desk.url
+stwake.conf

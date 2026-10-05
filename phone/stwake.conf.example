@@ -1,0 +1,7 @@
+# Copy to /data/local/tmp/stwake/stwake.conf on the phone. Read by stwaked.sh at every (re)start and by on-wake.sh.
+MODEL=user/computer.model      # path under /data/local/tmp/stwake: your udkgen output, or a GMM .uim
+THR=70                         # confidence bar; calibrate it (README) before going live
+# Desk gate (optional). Leave HOME_BSSID_RE empty to turn the gate off: every wake then fires.
+HOME_BSSID_RE=                 # e.g. 'aa:bb:cc:dd:ee:(01|02)' = both radios of your home access point
+DOCK_ANOM=70                   # µT; measure yours with ./magread 20 docked and loose
+HOME_RSSI_MAX=72               # gate only when the home AP is stronger than -72 dBm
