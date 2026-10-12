@@ -2,7 +2,7 @@
 
 A custom "computer" wake word that runs on a phone's Snapdragon audio DSP with the screen off, driven from a root shell process with no app installed, and hands what you say next to your own desktop voice assistant.
 
-> **Status: work in progress.** It runs on my own phone every day and still changes. It has been tested on exactly one phone model; on anything else, expect to adapt it.
+> **Status: work in progress.** The version it is ported from runs on my own phone every day and still changes; this exact copy compiles but has not been deployed to a phone yet. It has been tested on exactly one phone model; on anything else, expect to adapt it.
 
 > **Disclaimer.** This needs a rooted phone. It loads sound models straight into the audio DSP's sound-trigger engine, and the wrong model or setting **can crash the audio DSP**: on my phone that took out audio, the microphone and some sensors until a reboot. Use it at your own risk. This project is not affiliated with, endorsed by or supported by Amazon, Qualcomm or Google. No Amazon, Qualcomm or Google files are included.
 
@@ -73,7 +73,7 @@ What I took from it:
 
 ## Measured results
 
-All on my phone, my voice, 2026. Small samples, stated as counts.
+All on my phone, my voice, 2026. Small samples, stated as counts. They were measured on the version running on my phone. This repo's copy is ported from it with my addresses moved into a config file: `Wake.java`/`Listen.java` compile and every script passes `sh -n`, but this exact copy (including `deploy.sh`, `alertd.sh` and `wgaway.sh`) has not been deployed to a phone yet. The magnet drift steps above come from my notes; only the Oct 10 and Oct 11 rows have a sample size.
 
 | what | result | n, window |
 |---|---|---|
