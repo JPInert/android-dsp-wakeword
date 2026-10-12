@@ -107,11 +107,21 @@ public class Wake {
             }
             return null;
         });
+        // The sound-trigger middleware refuses an attach from a client that hasn't listed the modules first ("Client
+        // must call listModules() prior to attaching" in `dumpsys soundtrigger_middleware`). After a reboot that meant
+        // a null attach on every retry until some other app happened to list them: the word was dead for about half an
+        // hour after boot. So list them ourselves first.
+        try {
+            java.util.ArrayList<Object> mods = new java.util.ArrayList<>();
+            Object lr0 = st.getMethod("listModulesAsOriginator", java.util.ArrayList.class, idC).invoke(null, mods, id);
+            log("listModules rc=" + lr0 + " n=" + mods.size());
+        } catch (Throwable t) { log("listModules: " + t); }
         log("STAGE attach");
         Object mod = st.getMethod("attachModuleAsOriginator", int.class, lis, android.os.Handler.class, idC)
                 .invoke(null, 0, listener, new android.os.Handler(android.os.Looper.getMainLooper()), id);
         modRef[0] = mod;
         log("attached " + mod);
+        if (mod == null) { log("attach returned null - exiting for the supervisor to retry"); System.exit(6); }
         pause(stagePause);
         if (aborted()) { log("ABORT before load"); mod.getClass().getMethod("detach").invoke(mod); System.exit(9); }
         log("STAGE load");

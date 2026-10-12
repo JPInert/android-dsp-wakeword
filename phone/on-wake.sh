@@ -1,21 +1,22 @@
 #!/system/bin/sh
 # Run by Wake (root) on a DSP detection. Hands what you say next to your desktop assistant through the uid-1000
-# listener (Listen.java: Android's on-device recogniser, then the desktop's reply played on the phone). Only a
-# miss (the desktop had nothing, couldn't be reached, or the listener failed) opens the stock assistant instead:
+# listener (Listen.java: Android's on-device recogniser, then the desktop's reply played on the phone).
+# In my setup the desktop answers anything it has no fixed command for by starting a background job ("On it.", then
+# the answer a little later, see Listen.pending). The stock assistant only opens when the desktop can't be reached,
+# the listener isn't reading, or no verdict comes back (or when your desktop answers "miss", like desk_stub.py does):
 # wake the screen, clear the swipe keyguard (with a PIN the bouncer shows), press the assist key.
 # Nobody spoke after the wake word → nothing happens except a short "gave up" tone.
-# $D/NOGEMINI = test mode: everything runs, but a miss only logs "WOULD GEMINI".
-# Holds a 30 s kernel wakelock: listen ≤9 s + desktop + reply playback, so the phone can't suspend half-way.
+# $D/NOGEMINI = test mode: everything runs, but a miss only logs "WOULD GEMINI" (it never opens the assistant).
+# Holds a 60 s kernel wakelock: listen ≤9 s + desktop (some commands wait on another device, read timeout 30 s) +
+# reply playback, so the phone can't suspend half-way.
 #
-# Settings come from $D/stwake.conf (same file the supervisor reads):
-#   HOME_BSSID_RE='aa:bb:cc:dd:ee:(01|02)'  your home access point's BSSIDs (both radios), as an ERE
-#   DOCK_ANOM=70                             magnetometer anomaly (µT) above which the phone counts as docked
-#   HOME_RSSI_MAX=72                         only gate when the home AP is stronger than -72 dBm
-echo "stwake-fire 30000000000" > /sys/power/wake_lock
+# Settings come from $D/stwake.conf (gate.sh reads it): the dock-gate bars, plus for the VPN (optional, see wgaway.sh)
+#   WG_TUNNEL=home            the tunnel's name in the WireGuard app. Empty = never raise a tunnel.
+#   WG_PHONE_IP=...           the phone's Address from the tunnel config, without the /32 (how we tell it is up)
+echo "stwake-fire 60000000000" > /sys/power/wake_lock
 D=/data/local/tmp/stwake; PV=/data/local/tmp/pv; R=$PV/run
-HOME_BSSID_RE=; DOCK_ANOM=70; HOME_RSSI_MAX=72
-[ -f $D/stwake.conf ] && . $D/stwake.conf
-ts() { date '+%m-%d %H:%M:%S'; }
+WG_TUNNEL=; WG_PHONE_IP=
+. $D/gate.sh                 # the dock-gate bars, ts, start_l/poke1/poke; shared with alertd.sh. Reads stwake.conf.
 done_() { echo stwake-fire > /sys/power/wake_unlock; exit 0; }
 gemini() {
   if [ -e $D/NOGEMINI ]; then echo "$(ts) WOULD GEMINI ($1)"; return; fi
@@ -25,38 +26,50 @@ gemini() {
   for i in 1 2 3 4 5 6 7 8 9 10; do dumpsys window 2>/dev/null | grep -q isKeyguardShowing=true || break; sleep 0.1; done
   input keyevent KEYCODE_VOICE_ASSIST
 }
-# DESK GATE (optional): when the phone sits on a magnetic (MagSafe-style) charger at the desk, the desktop's own
-# microphone owns the wake word, so the phone stays quiet. Docked = home AP close by AND a magnet on the back:
-# field minus the phone's own magnetism measured ~90 µT docked vs ~50 µT loose (Earth's field). Car mount is
-# off home Wi-Fi → fires. A home AP with two radios needs BOTH BSSIDs in HOME_BSSID_RE: the phone hops between
-# them, and matching only one let docked wakes through.
-# Fails open: any missing reading → fire. Runs BEFORE the listener only on the home AP (magread takes 0.4–0.6 s),
-# so a docked wake never beeps; away from home the listener is poked at once.
+# A wake the desktop doesn't own lights the screen (no unlock: the word fires in conversation too), so you can see it
+# heard you. Backgrounded: it never delays the mic. $D/NOSCREEN = off.
+screen_on() { [ -e $D/NOSCREEN ] || input keyevent KEYCODE_WAKEUP & }
+# DESK GATE (bars and why: gate.sh). Fails open: any missing reading → fire. On the home AP, close by, the listener is
+# poked HELD first (mic open, no chirp), then magread (0.4-0.6 s) either cancels it silently or releases the chirp.
+# So a docked wake never beeps, and a one-breath "computer, do X" still keeps the X. Away it is poked at once.
 W=$(cmd wifi status 2>/dev/null)
-athome=
-[ -n "$HOME_BSSID_RE" ] && echo "$W" | grep -qE "BSSID: ($HOME_BSSID_RE)" && athome=1
-if [ -n "$athome" ] && \
-   [ "$(echo "$W" | grep -m1 -oE 'RSSI: -?[0-9]+' | grep -oE '[0-9]+$')" -lt "$HOME_RSSI_MAX" ] 2>/dev/null; then
-  M=$($D/magread 1 2>/dev/null)
-  A=$(echo "$M" | grep -oE '^anom=[0-9]+' | cut -d= -f2)
-  if [ -n "$A" ] && [ "$A" -gt "$DOCK_ANOM" ]; then
-    echo "$(ts) skip: docked at desk ($M)"; done_
-  fi
-fi
-echo "$(ts) fire ($(echo "$W" | grep -m1 -oE 'RSSI: -?[0-9]+') $M)"
-# the listener: lazy-start it if it isn't running (the first wake after a reboot pays ~0.3 s), then poke
-if ! kill -0 "$(cat $R/listen.pid 2>/dev/null)" 2>/dev/null; then
-  mkdir -p $R; chown 1000:1000 $R
-  nohup setsid su 1000 -c "CLASSPATH=$D/listen.jar exec app_process /system/bin Listen" >> $PV/listen.log 2>&1 < /dev/null &
-  for i in $(seq 1 30); do [ -p $R/poke ] && grep -q "listener up pid=$(cat $R/listen.pid 2>/dev/null)" $PV/listen.log 2>/dev/null && break; sleep 0.1; done
-  echo "$(ts) listener started"
-fi
+kill -0 "$(cat $R/listen.pid 2>/dev/null)" 2>/dev/null || start_l
 id=w$(date +%s)$$
-# away = not on the home Wi-Fi → the desktop can refuse things that only make sense at home (e.g. "play …" on the TV)
-[ -n "$athome" ] && away= || away=" away"
-if ! timeout 1 sh -c "echo $id$away > $R/poke" 2>/dev/null; then gemini "listener not reading"; done_; fi
-# wait for its verdict: ≤9 s listening + 1.5 s cap grace + desktop (2.5 s connect / 8 s read)
-for i in $(seq 1 200); do [ -e $R/$id.json ] && break; sleep 0.1; done
+if at_home; then
+  if close; then
+    poke "$id hold" || { gemini "listener not reading"; done_; }
+    if magnet; then
+      poke1 cancel
+      echo "$(ts) skip: docked at desk ($M)"
+      for i in 1 2 3 4 5 6 7 8 9 10; do [ -e $R/$id.json ] && break; sleep 0.1; done; rm -f $R/$id.json
+      done_
+    fi
+    poke1 go
+  else
+    poke "$id" || { gemini "listener not reading"; done_; }
+  fi
+  screen_on
+else
+  # away = not on the home Wi-Fi → the desktop can refuse things that only make sense at home (e.g. "play …" on the TV).
+  # No tunnel → raise it now: it is up in ~1-2 s, inside the time you are still talking, and the listener's 2.5 s
+  # connect timeout is the backstop. wgaway.sh normally keeps it up away from home already.
+  nd=
+  if [ -n "$WG_TUNNEL" ] && [ -n "$WG_PHONE_IP" ] && ! ip -o addr show tun0 2>/dev/null | grep -qF " $WG_PHONE_IP/"; then nd=" tunnel raised"
+    am broadcast -a com.wireguard.android.action.SET_TUNNEL_UP -n 'com.wireguard.android/.model.TunnelManager$IntentReceiver' \
+      -e tunnel "$WG_TUNNEL" >/dev/null 2>&1
+  fi
+  # A blip is not away: the Wi-Fi scorer can drop a full-signal home link for 1-3 s (a "data stall" disconnect). My
+  # phone once fired inside one of those and went out as away. wgaway.sh touches home.seen every 5 s on home Wi-Fi,
+  # so home ≤ BLIP_S ago = still home: no away flag. Cost: the first BLIP_S after really leaving count as home.
+  # Without wgaway.sh there is no home.seen, so every off-Wi-Fi wake counts as away.
+  BLIP_S=15; hs=$(( $(date +%s) - $(stat -c %Y $D/home.seen 2>/dev/null || echo 0) ))
+  if [ $hs -le $BLIP_S ]; then nd="$nd blip: home ${hs}s ago"; aw=; else aw=" away"; fi
+  poke "$id$aw" || { gemini "listener not reading"; done_; }
+  screen_on
+fi
+echo "$(ts) fire ($(echo "$W" | grep -m1 -oE 'RSSI: -?[0-9]+') $M$nd)"
+# wait for its verdict: ≤9 s listening + 1.5 s cap grace + desktop (2.5 s connect / 30 s read)
+for i in $(seq 1 450); do [ -e $R/$id.json ] && break; sleep 0.1; done
 if [ ! -e $R/$id.json ]; then gemini "no verdict"; done_; fi
 J=$(cat $R/$id.json); rm -f $R/$id.json
 heard=$(echo "$J" | grep -oE '"heard": ?"[^"]*"' | head -1 | sed -E 's/"heard": ?"//; s/"$//')

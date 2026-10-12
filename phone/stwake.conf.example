@@ -1,7 +1,13 @@
-# Copy to /data/local/tmp/stwake/stwake.conf on the phone. Read by stwaked.sh at every (re)start and by on-wake.sh.
+# Copy to /data/local/tmp/stwake/stwake.conf on the phone. Read by stwaked.sh at every (re)start, and by gate.sh
+# (on-wake.sh, alertd.sh) and wgaway.sh. Restart alertd.sh after a change: it reads the file once at start.
 MODEL=user/computer.model      # path under /data/local/tmp/stwake: your udkgen output, or a GMM .uim
 THR=70                         # confidence bar; calibrate it (README) before going live
 # Desk gate (optional). Leave HOME_BSSID_RE empty to turn the gate off: every wake then fires.
 HOME_BSSID_RE=                 # e.g. 'aa:bb:cc:dd:ee:(01|02)' = both radios of your home access point
-DOCK_ANOM=70                   # µT; measure yours with ./magread 20 docked and loose
+DOCK_ANOM=64                   # µT; measure yours with ./magread 20 docked and loose. Mine started at 70 and had to
+                               # drop to 64 as the phone's auto-calibration learned the magnet (README, magnet lesson)
 HOME_RSSI_MAX=72               # gate only when the home AP is stronger than -72 dBm
+# VPN (optional, wgaway.sh + on-wake.sh). Leave WG_TUNNEL empty and nothing touches the VPN.
+HOME_SSID=                     # your home Wi-Fi name
+WG_TUNNEL=                     # the tunnel's name in the WireGuard app, e.g. home
+WG_PHONE_IP=                   # the phone's Address from the tunnel config, without the /32
